@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, onAction, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { Account, NewMail } from "./types";
+import { fromDomain } from "./views";
 
 const inTauri = () => "__TAURI_INTERNALS__" in window;
 
@@ -20,13 +21,8 @@ export function summarize(batch: NewMail[], accounts: Account[]): { title: strin
   return { title: named(`${batch.length} new messages`), body };
 }
 
-/** Whether mail comes from one of the domains the person listed (any space, comma or line between them; a subdomain
- *  counts). Nothing listed: every sender. */
-export function fromDomains(m: NewMail, domains: string) {
-  const list = domains.toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^.*@|^\*?\./, "")).filter(Boolean);
-  const host = m.address.toLowerCase().split("@").pop() ?? "";
-  return !list.length || list.some((d) => host === d || host.endsWith(`.${d}`));
-}
+/** Whether new mail comes from one of the domains the person listed (fromDomain). Nothing listed: every sender. */
+export const fromDomains = (m: NewMail, domains: string) => fromDomain(m.address, domains);
 
 const EACH = 10; // a pass's first ten messages get a notification each; the rest share one
 

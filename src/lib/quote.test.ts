@@ -42,6 +42,15 @@ describe("splitQuoted", () => {
     });
   });
 
+  it("splits at Outlook's rule above a From: line", () => {
+    const rule = "_".repeat(32);
+    expect(splitQuoted(`Done.\n\n${rule}\nFrom: Sam <sam@x>\nSubject: Hi`)).toEqual({
+      text: "Done.",
+      quoted: `${rule}\nFrom: Sam <sam@x>\nSubject: Hi`,
+    });
+    expect(splitQuoted(`A line\n${rule}\nnot a header`).quoted).toBe("");
+  });
+
   it("returns empty text when the whole body is quoted", () => {
     const body = "-----Original Message-----\nFrom: Studio North\n\nHi Daniel";
     expect(splitQuoted(body)).toEqual({ text: "", quoted: body });

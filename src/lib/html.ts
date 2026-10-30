@@ -42,9 +42,9 @@ const OWN_DARK = /prefers-color-scheme\s*:\s*dark|color-scheme\s*:[^;"'}]*\bdark
 export const hasOwnDark = (html: string) => OWN_DARK.test(html);
 
 // <meta> (refresh), <base> and <link> become unknown, inert elements: renaming the tag can't be dodged the way
-// matching its attributes can. Links are kept once remote content is allowed (stylesheets then load); before that,
+// matching its attributes can. Embedded pages (frames, objects) go too: a page inside a message is a web page in the app. Links are kept once remote content is allowed (stylesheets then load); before that,
 // WebKit would still preconnect to a <link>'s host despite the CSP, telling a tracker the mail was opened.
-const INERT_ALWAYS = /<(\/?)(meta|base)\b/gi;
+const INERT_ALWAYS = /<(\/?)(meta|base|i?frame|frameset|object|embed)\b/gi;
 const INERT_LINK = /<(\/?)(link)\b/gi;
 // Protocol-relative URLs would resolve against the app (tauri://…) inside srcdoc: give them https.
 const PROTOCOL_RELATIVE = /(\b(?:src|href|srcset|poster|background)\s*=\s*["']?\s*|url\(\s*["']?\s*)\/\/(?=[\w.-])/gi;

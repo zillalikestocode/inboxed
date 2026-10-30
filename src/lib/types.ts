@@ -56,6 +56,7 @@ export type ThreadSummary = {
   subject: string;
   snippet: string;
   participants: Address[]; // everyone except the account owner
+  senders: string[]; // who wrote its messages (lowercase addresses), the account owner aside
   lastDate: string;
   unread: boolean;
   starred: boolean;

@@ -261,16 +261,21 @@ func participants(msgs []Message, me string) []Address {
 }
 
 const summaryColumns = `t.id, t.account_id, t.subject, t.snippet, t.participants, t.last_date, t.unread, t.starred,
-	t.has_attachments, (SELECT json_group_array(mailbox_id) FROM thread_mailboxes WHERE thread_id = t.id)`
+	t.has_attachments, (SELECT json_group_array(mailbox_id) FROM thread_mailboxes WHERE thread_id = t.id),
+	(SELECT json_group_array(DISTINCT lower(json_extract(m.sender, '$.email'))) FROM messages m WHERE m.thread_id = t.id
+		AND lower(json_extract(m.sender, '$.email')) != (SELECT lower(email) FROM accounts WHERE id = t.account_id))`
 
 func scanSummary(row interface{ Scan(...any) error }) (Thread, error) {
 	var t Thread
-	var people, boxes string
+	var people, boxes, senders string
 	if err := row.Scan(&t.ID, &t.AccountID, &t.Subject, &t.Snippet, &people, &t.LastDate, &t.Unread, &t.Starred,
-		&t.HasAttachments, &boxes); err != nil {
+		&t.HasAttachments, &boxes, &senders); err != nil {
 		return t, err
 	}
 	if err := json.Unmarshal([]byte(people), &t.Participants); err != nil {
+		return t, err
+	}
+	if err := json.Unmarshal([]byte(senders), &t.Senders); err != nil {
 		return t, err
 	}
 	return t, json.Unmarshal([]byte(boxes), &t.MailboxIDs)

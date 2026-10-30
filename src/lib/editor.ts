@@ -128,10 +128,11 @@ function mentions(hooks: MentionHooks) {
   });
 }
 
-/** The compose editor in el, starting with html. onChange gets its HTML and plain-text version after every edit. */
+/** The compose editor in el, starting with html. onChange gets its HTML and plain-text version after every edit. style
+ *  is the page's own (the base style new mail is sent in). */
 export function createEditor(
   el: HTMLElement,
-  opts: { html: string; onChange: (html: string, text: string) => void; mention?: MentionHooks },
+  opts: { html: string; onChange: (html: string, text: string) => void; mention?: MentionHooks; style?: string },
 ): Editor {
   return new Editor({
     element: el,
@@ -151,7 +152,9 @@ export function createEditor(
       SendKey,
       ...(opts.mention ? [mentions(opts.mention)] : []),
     ],
-    editorProps: { attributes: { "aria-label": "Message", "aria-multiline": "true", role: "textbox", class: "compose-page" } },
+    editorProps: {
+      attributes: { "aria-label": "Message", "aria-multiline": "true", role: "textbox", class: "compose-page", style: opts.style ?? "" },
+    },
     onUpdate: ({ editor }) => opts.onChange(editor.getHTML(), plainText(editor.getJSON())),
   });
 }

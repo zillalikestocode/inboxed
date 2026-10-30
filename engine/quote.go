@@ -10,6 +10,7 @@ import (
 var (
 	attribution   = regexp.MustCompile(`^On .+ wrote:\s*$`)
 	outlookMarker = regexp.MustCompile(`(?i)^-{2,}\s*Original Message\s*-{2,}$`)
+	outlookRule   = regexp.MustCompile(`^_{10,}$`) // over a From: line
 )
 
 // splitQuoted splits a plain-text body into what the sender wrote and the quoted reply chain below it.
@@ -17,6 +18,7 @@ func splitQuoted(body string) (text, quoted string) {
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
 		if attribution.MatchString(line) || outlookMarker.MatchString(strings.TrimSpace(line)) ||
+			(outlookRule.MatchString(strings.TrimSpace(line)) && i+1 < len(lines) && strings.HasPrefix(lines[i+1], "From:")) ||
 			(strings.HasPrefix(line, ">") && allQuoted(lines[i:])) {
 			return strings.TrimRightFunc(strings.Join(lines[:i], "\n"), unicode.IsSpace), strings.Join(lines[i:], "\n")
 		}

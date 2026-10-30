@@ -7,20 +7,22 @@
   import { mailFont, settings } from "$lib/settings.svelte";
   import { theme } from "$lib/theme.svelte";
 
-  let { html, accountId }: { html: string; accountId: string } = $props();
+  // paper: shown as it'll be sent, on compose's white page (which the dark theme inverts itself): light, in its own
+  // fonts, quotes and all, with nothing to change about it.
+  let { html, accountId, paper = false }: { html: string; accountId: string; paper?: boolean } = $props();
 
   let frame = $state<HTMLIFrameElement>();
   let remote = $state(settings.loadImages); // per message, per visit: images load only when asked (or always, in Settings)
   let original = $state(false); // per message, per visit: shown light although the app is dark
   let height = $state(0);
   let hasQuotes = $state(false);
-  let showQuotes = $state(false);
+  let showQuotes = $state(false); // paper shows them all (loaded)
   // Mail with a dark design of its own follows the window's appearance by itself: there's no original to go back to.
   const ownDark = $derived(hasOwnDark(html));
-  const dark = $derived(theme.current === "dark" && (ownDark || !original));
-  const doc = $derived(frameDoc(html, remote, dark, mailFont()));
+  const dark = $derived(!paper && theme.current === "dark" && (ownDark || !original));
+  const doc = $derived(frameDoc(html, remote, dark, paper ? undefined : mailFont()));
   const blocked = $derived(hasRemoteContent(html) && !remote);
-  const recolorable = $derived(theme.current === "dark" && !ownDark);
+  const recolorable = $derived(!paper && theme.current === "dark" && !ownDark);
   let observer: ResizeObserver | undefined;
   let steps = 0;
   const MAX_HEIGHT = 30_000;
@@ -51,8 +53,10 @@
       el.style.setProperty("min-height", "0", "important");
     }
     // The mail font holds over inline font-family too (a style attribute's !important beats any style sheet).
-    for (const el of d.querySelectorAll<HTMLElement>("[style*='font' i]")) {
-      if (!MONOSPACE.test(el.style.fontFamily)) el.style.removeProperty("font-family");
+    if (!paper) {
+      for (const el of d.querySelectorAll<HTMLElement>("[style*='font' i]")) {
+        if (!MONOSPACE.test(el.style.fontFamily)) el.style.removeProperty("font-family");
+      }
     }
     observer?.disconnect();
     steps = lastGrowth = 0;
@@ -63,9 +67,9 @@
     d.addEventListener("contextmenu", menu);
     // The app's shortcuts keep working while focus is inside the message.
     d.addEventListener("keydown", (e) => window.dispatchEvent(new KeyboardEvent("keydown", e)));
-    hasQuotes = !!d.querySelector(QUOTE_SELECTOR);
+    hasQuotes = !paper && !!d.querySelector(QUOTE_SELECTOR);
     // A forward without a note of its own is all "quote" (Gmail, Outlook and Apple Mail wrap it so): show it.
-    if (hasQuotes && !showQuotes && !d.body.innerText.trim()) showQuotes = true;
+    if (paper || (hasQuotes && !showQuotes && !d.body.innerText.trim())) showQuotes = true;
     d.documentElement.classList.toggle("ib-show-quotes", showQuotes);
     measure();
   }
@@ -86,6 +90,7 @@
       return;
     }
     if (url.protocol === "mailto:") {
+      if (paper) return; // in compose's preview of a reply's trail: a new message would replace the reply
       compose({ accountId, ...mailtoDraft(url.href) });
     } else if (url.protocol === "https:" || url.protocol === "http:") {
       if ("__TAURI_INTERNALS__" in window) openUrl(url.href).catch(console.error);
@@ -107,7 +112,7 @@
 </script>
 
 <!-- What can be changed about how this message shows, on one quiet line above it. -->
-{#if blocked || recolorable}
+{#if !paper && (blocked || recolorable)}
   <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-caption text-ink-muted">
     {#if blocked}
       <span>Images are blocked, so the sender can't see you opened this.</span>

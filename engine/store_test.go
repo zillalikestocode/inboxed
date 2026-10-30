@@ -113,6 +113,25 @@ func TestAccountsAndMailboxes(t *testing.T) {
 	}
 }
 
+// Senders are who wrote a thread's messages, the account's own address aside: the list splits inboxes by them.
+func TestThreadSenders(t *testing.T) {
+	s := newTestStore(t)
+	th, err := s.Thread("t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(slices.Values(th.Senders)); !slices.Equal(got, []string{"daniel@work.example", "maya@work.example"}) {
+		t.Errorf("senders %v", got)
+	}
+	list, err := s.Threads("a1", "a1-sent", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || len(list[0].Senders) != 0 {
+		t.Errorf("my own thread's senders: %+v", list)
+	}
+}
+
 func TestThreadsByView(t *testing.T) {
 	s := newTestStore(t)
 	cases := []struct {

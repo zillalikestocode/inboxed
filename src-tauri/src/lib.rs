@@ -1,7 +1,8 @@
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{plugin::TauriPlugin, Manager, Runtime, Url};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{process::{CommandChild, CommandEvent}, ShellExt};
 use tokio::sync::watch;
 
@@ -35,13 +36,47 @@ async fn engine(state: tauri::State<'_, EngineState>) -> Result<Engine, String> 
     Ok(engine.clone().unwrap())
 }
 
+/// Whether a navigation would put a web page inside Inboxed: anything on the web but the app itself (tauri.localhost;
+/// in debug builds also the Vite dev server).
+fn is_web(url: &Url, debug: bool) -> bool {
+    let app = url.host_str() == Some("tauri.localhost")
+        || (debug && url.host_str() == Some("localhost") && url.port() == Some(1420));
+    matches!(url.scheme(), "http" | "https") && !app
+}
+
+/// Web pages never open inside Inboxed, in the window or in any frame of it. The page sends links to the browser itself;
+/// this catches whatever it can't see (a link in a previewed PDF, a dropped link, one it missed): cancelled here, opened
+/// in the browser instead.
+fn links<R: Runtime>() -> TauriPlugin<R> {
+    tauri::plugin::Builder::new("links")
+        .on_navigation(|webview, url| {
+            if !is_web(url, cfg!(debug_assertions)) {
+                return true;
+            }
+            if let Err(e) = webview.opener().open_url(url.as_str(), None::<&str>) {
+                eprintln!("couldn't open {url}: {e}");
+            }
+            false
+        })
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(links())
         .setup(|app| {
+            // A force click on a link would show the page in a preview inside the window: links go to the browser.
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                window.with_webview(|w| unsafe {
+                    let view: &objc2_web_kit::WKWebView = &*w.inner().cast();
+                    view.setAllowsLinkPreview(false);
+                })?;
+            }
             // The engine keeps its database in the app data folder (~/Library/Application Support/dev.inboxed.app).
             // Debug builds get their own subfolder, so accounts added while developing never mix with a real install's.
             let debug = cfg!(debug_assertions);
@@ -113,4 +148,25 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_web_leaves() {
+        let web = |s: &str| is_web(&s.parse().unwrap(), false);
+        assert!(web("https://example.com/a"));
+        assert!(web("http://example.com"));
+        assert!(!web("tauri://localhost/"));
+        assert!(!web("http://tauri.localhost/"));
+        assert!(web("http://localhost:1420/")); // the dev server is the app only in debug builds
+        assert!(web("http://localhost:8080/"));
+        assert!(!is_web(&"http://localhost:1420/".parse().unwrap(), true));
+        assert!(is_web(&"http://localhost:8080/".parse().unwrap(), true));
+        assert!(!web("about:srcdoc"));
+        assert!(!web("blob:tauri://localhost/1234"));
+        assert!(!web("mailto:a@example.com"));
+    }
 }

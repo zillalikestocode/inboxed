@@ -57,6 +57,7 @@ type Thread struct {
 	Subject        string    `json:"subject"`
 	Snippet        string    `json:"snippet"`
 	Participants   []Address `json:"participants"`
+	Senders        []string  `json:"senders"` // who wrote its messages (lowercase addresses), the account aside
 	LastDate       string    `json:"lastDate"`
 	Unread         bool      `json:"unread"`
 	Starred        bool      `json:"starred"`
