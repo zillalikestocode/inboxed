@@ -5,9 +5,10 @@
   import { addRecipient, emailsIn, matchContacts } from "$lib/contacts";
   import { createEditor, type MentionState } from "$lib/editor";
   import { formatSize } from "$lib/format";
-  import { splitQuoted } from "$lib/quote";
-  import { quoteHtml } from "$lib/rich";
+  import { baseCss } from "$lib/rich";
+  import { composeStyle } from "$lib/settings.svelte";
   import AddressField from "./AddressField.svelte";
+  import HtmlBody from "./HtmlBody.svelte";
   import Icon from "./Icon.svelte";
   import Suggestions from "./Suggestions.svelte";
   import Toolbar from "./Toolbar.svelte";
@@ -27,20 +28,22 @@
   const isMac = navigator.platform.startsWith("Mac");
   const everyone = $derived(emailsIn(`${ui.draft.to},${ui.draft.cc},${ui.draft.bcc}`));
 
-  // A reply's quoted history folds away under •••, as in the thread, so the box opens on what you write. It stays out
-  // of the editor but goes with the message (html and body end with it); ••• puts it into the editor.
-  const { quoted } = ui.draft.threadId ? splitQuoted(ui.draft.body) : { quoted: "" };
-  const tailHtml = quoted ? quoteHtml(quoted) : "";
-  const tailText = `\n\n${quoted}`;
-  let folded = $state(!!quoted && (ui.draft.html ?? "").endsWith(tailHtml));
-  const visible = () => (folded ? (ui.draft.html ?? "").slice(0, -tailHtml.length) : (ui.draft.html ?? ""));
+  // A reply's history (Outlook's headers, then the message as it was) stays out of the editor, which would flatten its
+  // layout, and goes with the message: html and body always end with it. ••• shows it under the editor, as it'll be sent.
+  const trail = ui.trail;
+  let showTrail = $state(false);
+  const visible = () => {
+    const html = ui.draft.html ?? "";
+    return trail && html.endsWith(trail.html) ? html.slice(0, -trail.html.length) : html;
+  };
 
   onMount(() => {
     editor = createEditor(page!, {
       html: visible(),
+      style: baseCss(composeStyle()),
       onChange: (html, text) => {
-        ui.draft.html = html + (folded ? tailHtml : "");
-        ui.draft.body = text + (folded ? tailText : "");
+        ui.draft.html = html + (trail?.html ?? "");
+        ui.draft.body = text + (trail?.text ?? "");
       },
       mention: {
         items: (query) => matchContacts(data.contacts, query, []),
@@ -57,14 +60,9 @@
   });
   onDestroy(() => editor?.destroy());
 
-  function unfold() {
-    folded = false;
-    editor?.chain().insertContentAt(editor.state.doc.content.size, tailHtml).focus("end").run();
-  }
-
   function sender(accountId: string) {
     // The editor's own HTML: a resumed draft arrives as sent (emailHtml), where the old signature can't be found.
-    changeSender(accountId, folded ? tailHtml : "", editor && editor.getHTML() + (folded ? tailHtml : ""));
+    changeSender(accountId, editor && editor.getHTML() + (trail?.html ?? ""));
     editor?.commands.setContent(visible(), { emitUpdate: false });
   }
 
@@ -161,18 +159,26 @@
 
   {#if editor}<Toolbar {editor} />{/if}
   <!-- Mail is written on white, like it's read; the dark theme inverts the page as it does received mail. -->
-  <div bind:this={page} class="compose-scroll min-h-0 flex-1 overflow-y-auto"></div>
-  {#if folded}
+  <div class="compose-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <!-- The page fills the panel, so a click anywhere below the text lands in it; with the trail open, the trail follows the text. -->
+    <div bind:this={page} class="flex flex-col {showTrail ? '' : 'flex-1'}"></div>
+    {#if trail}
+      <!-- On the paper: its colors are the page's, and the dark theme inverts them with it. -->
       <button
         type="button"
-        class="mx-4 my-2 grid h-6 w-9 shrink-0 place-items-center rounded-full bg-raised text-ink-muted transition-colors duration-100 hover:text-ink active:bg-ink/10"
-        aria-label="Show quoted text"
-        title="Show quoted text"
-        onclick={unfold}
+        class="mx-4 my-2 grid h-6 w-9 shrink-0 place-items-center rounded-full bg-[#0000000d] text-[#737373] transition-colors duration-100 hover:text-[#1c1b1b] active:bg-[#0000001a]"
+        aria-label={showTrail ? "Hide quoted text" : "Show quoted text"}
+        aria-expanded={showTrail}
+        title={showTrail ? "Hide quoted text" : "Show quoted text"}
+        onclick={() => (showTrail = !showTrail)}
       >
         <Icon icon={MoreHorizontalIcon} size={14} />
       </button>
-  {/if}
+      {#if showTrail}
+        <div class="px-4 pb-4"><HtmlBody html={trail.html} accountId={ui.draft.accountId} paper /></div>
+      {/if}
+    {/if}
+  </div>
 
   {#if ui.draft.attachments.length || ui.attaching}
     <ul class="flex shrink-0 flex-wrap gap-2 border-t border-line px-4 py-2.5" aria-label="Attachments">

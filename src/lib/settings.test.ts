@@ -37,4 +37,16 @@ describe("settings", () => {
     store.set("inboxed.settings", "{oops");
     expect((await import("./settings.svelte")).settings.markRead).toBe(true);
   });
+
+  it("keep compose defaults only when they're offered", async () => {
+    const { composeStyle, settings } = await import("./settings.svelte");
+    expect(composeStyle()).toEqual({ font: "", size: 11, color: "" });
+    settings.composeFont = "Georgia, 'Times New Roman', serif";
+    settings.composeSize = 14;
+    settings.composeColor = "#0b5394";
+    expect(composeStyle()).toEqual({ font: "Georgia, 'Times New Roman', serif", size: 14, color: "#0b5394" });
+    vi.resetModules();
+    store.set("inboxed.settings", JSON.stringify({ composeFont: "Papyrus", composeSize: 13, composeColor: "red; x: y" }));
+    expect((await import("./settings.svelte")).composeStyle()).toEqual({ font: "", size: 11, color: "" });
+  });
 });

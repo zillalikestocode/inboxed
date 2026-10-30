@@ -217,7 +217,7 @@
     color-scheme: light;
   }
   .compose-page {
-    @apply min-h-full px-4 py-3 outline-none;
+    @apply min-h-24 flex-1 px-4 py-3 outline-none;
     font: 11pt/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     overflow-wrap: anywhere;
     & p {

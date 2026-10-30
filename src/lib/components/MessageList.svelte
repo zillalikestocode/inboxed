@@ -6,11 +6,32 @@
   import { threadMenu } from "$lib/menus";
   import { compose, data, syncNow, ui, openThread } from "$lib/state.svelte";
   import { dateGroup, formatDate } from "$lib/format";
+  import { settings } from "$lib/settings.svelte";
+  import { isFocused, isInbox } from "$lib/views";
 
   const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   import type { ThreadSummary } from "$lib/types";
 
-  const list = $derived(data.list); // already filtered and searched by the engine
+  // An inbox splits into Focused (conversations with the domains chosen in Settings) and Other; a search covers both.
+  const tabbed = $derived(!ui.query.trim() && isInbox(data.mailboxes, ui.accountId, ui.mailboxKey));
+  const focused = $derived(data.list.filter((t) => isFocused(t, settings.notifyDomains)));
+  const other = $derived(data.list.filter((t) => !isFocused(t, settings.notifyDomains)));
+  const list = $derived(tabbed ? (ui.focus === "focused" ? focused : other) : data.list); // the engine filtered and searched
+  const tabs = $derived([
+    { id: "focused" as const, label: "Focused", unread: focused.filter((t) => t.unread).length },
+    { id: "other" as const, label: "Other", unread: other.filter((t) => t.unread).length },
+  ]);
+  // Tabs as the platform does them: arrows move between them, and the tab follows focus.
+  function tabArrows(e: KeyboardEvent) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    ui.focus = ui.focus === "focused" ? "other" : "focused";
+    document.getElementById(`list-tab-${ui.focus}`)?.focus();
+  }
+  function chooseDomains() {
+    ui.settingsTab = "Notifications";
+    ui.settingsOpen = true;
+  }
   const accountColor = (id: string) => data.accounts.find((a) => a.id === id)?.color;
   const account = $derived(data.accounts.find((a) => a.id === ui.accountId));
   const importing = $derived(data.accounts.filter((a) => a.sync?.state === "importing"));
@@ -98,8 +119,34 @@
     </label>
   </div>
 
+  {#if tabbed}
+    <div role="tablist" aria-label="Inbox" tabindex="-1" class="mx-3 mb-1 flex gap-4 border-b border-line" onkeydown={tabArrows}>
+      {#each tabs as t (t.id)}
+        {@const selected = ui.focus === t.id}
+        <button
+          id="list-tab-{t.id}"
+          role="tab"
+          aria-selected={selected}
+          aria-controls="message-list"
+          tabindex={selected ? 0 : -1}
+          class="-mb-px flex items-center gap-1.5 border-b-2 px-0.5 pb-2 transition-colors duration-100 active:text-ink {selected
+            ? 'border-accent font-medium text-ink'
+            : 'border-transparent text-ink-muted hover:text-ink'}"
+          onclick={() => (ui.focus = t.id)}
+        >
+          {t.label}
+          {#if t.unread}
+            <span class="grid h-4.5 min-w-4.5 place-items-center rounded-full bg-accent px-1.5 text-caption font-semibold text-on-accent tabular-nums"
+              >{t.unread > 99 ? "99+" : t.unread}<span class="sr-only"> unread</span></span
+            >
+          {/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   {#if list.length}
-    <div id="message-list" class="min-h-0 flex-1 overflow-y-auto pr-2 pb-2">
+    <div id="message-list" role={tabbed ? "tabpanel" : undefined} aria-labelledby={tabbed ? `list-tab-${ui.focus}` : undefined} class="min-h-0 flex-1 overflow-y-auto pr-2 pb-2">
       {#each groups as g (g.key)}
         <!-- A day (or month) in the gutter, pinned while its conversations scroll past; the hairline is the spine. -->
         <section aria-label={g.name} class="grid grid-cols-[5.5rem_minmax(0,1fr)]">
@@ -168,11 +215,21 @@
         <button class="btn-primary mt-3" onclick={() => (ui.addingAccount = true)}>Add account</button>
       </div>
     </div>
+  {:else if tabbed && ui.focus === "other" && !settings.notifyDomains.trim() && data.list.length}
+    <!-- With no domains chosen, everything is Focused: say how to sort mail here. -->
+    <div class="grid flex-1 place-items-center px-8 text-center">
+      <div class="flex flex-col items-center gap-2">
+        <Icon icon={InboxIcon} size={28} class="text-ink-muted" />
+        <p class="font-medium">Everything is in Focused</p>
+        <p class="text-balance text-ink-muted">Choose the sender domains that matter to you. Their mail stays in Focused, and the rest comes here.</p>
+        <button class="btn-secondary mt-3" onclick={chooseDomains}>Choose domains</button>
+      </div>
+    </div>
   {:else}
     <div class="grid flex-1 place-items-center text-ink-muted">
       <div class="flex flex-col items-center gap-2">
         <Icon icon={InboxIcon} size={28} />
-        <p>{ui.query ? "No results" : "No messages"}</p>
+        <p>{ui.query ? "No results" : tabbed ? `Nothing in ${ui.focus === "focused" ? "Focused" : "Other"}` : "No messages"}</p>
       </div>
     </div>
   {/if}

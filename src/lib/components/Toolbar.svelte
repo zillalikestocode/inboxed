@@ -12,7 +12,8 @@
   } from "@hugeicons/core-free-icons";
   import { menuAt } from "$lib/contextmenu";
   import type { MenuEntry } from "$lib/menus";
-  import { BASE_SIZE, COLORS, FONTS, HIGHLIGHTS, SIZES } from "$lib/rich";
+  import { COLORS, FONTS, HIGHLIGHTS, SIZES } from "$lib/rich";
+  import { composeStyle } from "$lib/settings.svelte";
   import Icon from "./Icon.svelte";
   import Palette from "./Palette.svelte";
 
@@ -35,8 +36,10 @@
   };
   const style = $derived(read(() => editor.getAttributes("textStyle")));
   const active = (name: string) => read(() => editor.isActive(name));
+  // Text without a font or size of its own is in the base style (Settings → Compose); "Default" is that font.
+  const base = composeStyle();
   const font = $derived(FONTS.find((f) => f.stack && f.stack === style.fontFamily)?.stack ?? "");
-  const size = $derived(parseInt(style.fontSize) || BASE_SIZE);
+  const size = $derived(parseInt(style.fontSize) || base.size);
   const color: string | null = $derived(style.color ?? null);
   const highlight: string | null = $derived(style.backgroundColor ?? null);
 
@@ -146,7 +149,9 @@
       value={font}
       onchange={(e) => (e.currentTarget.value ? chain().setFontFamily(e.currentTarget.value).run() : chain().unsetFontFamily().run())}
     >
-      {#each FONTS as f (f.label)}<option value={f.stack}>{f.label}</option>{/each}
+      {#each FONTS as f (f.label)}
+        <option value={f.stack}>{f.stack || !base.font ? f.label : `Default (${FONTS.find((x) => x.stack === base.font)?.label})`}</option>
+      {/each}
     </select>
     <select
       class="ml-1 h-8 w-14 rounded-lg bg-raised px-2 tabular-nums outline-none hover:bg-ink/5 focus-visible:ring-2 focus-visible:ring-accent"
@@ -154,7 +159,7 @@
       value={size}
       onchange={(e) => {
         const n = Number(e.currentTarget.value);
-        if (n === BASE_SIZE) chain().unsetFontSize().run();
+        if (n === base.size) chain().unsetFontSize().run();
         else chain().setFontSize(`${n}pt`).run();
       }}
     >

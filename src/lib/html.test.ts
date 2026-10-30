@@ -20,12 +20,13 @@ describe("frameDoc", () => {
   it("puts the policy first, on a light page, and defuses meta, base and link tags", () => {
     const doc = frameDoc(
       '<meta http-equiv="refresh" content="0;url=https://evil.example"><BASE href="https://evil.example/">' +
-        '<link x="rel=stylesheet>" rel=preconnect href="//t.example"><p>Hi</p>',
+        '<link x="rel=stylesheet>" rel=preconnect href="//t.example"><IFRAME src="https://t.example"></iframe>' +
+        '<object data="https://t.example"></object><embed src="https://t.example"><p>Hi</p>',
       false,
     );
     expect(doc.indexOf("Content-Security-Policy")).toBeLessThan(doc.indexOf("<p>Hi</p>"));
     const body = doc.slice(doc.indexOf("<body>"));
-    expect(body).not.toMatch(/<(meta|base|link)\b/i); // WebKit preconnects for <link> despite the CSP
+    expect(body).not.toMatch(/<(meta|base|link|iframe|object|embed)\b/i); // WebKit preconnects for <link> despite the CSP
     expect(csp(doc)).toContain("base-uri 'none'");
     expect(csp(doc)).toContain("form-action 'none'");
     expect(doc).toContain("color-scheme: light");

@@ -27,7 +27,7 @@ beforeEach(async () => {
 });
 
 const row = (over: Partial<ThreadSummary> = {}): ThreadSummary => ({
-  id: "t1", accountId: "a1", mailboxIds: ["a1-inbox"], subject: "Hi", snippet: "", participants: [],
+  id: "t1", accountId: "a1", mailboxIds: ["a1-inbox"], subject: "Hi", snippet: "", participants: [], senders: [],
   lastDate: "2026-10-15T10:00:00.000Z", unread: true, starred: false, hasAttachments: false, ...over,
 });
 const labels = (entries: import("./menus").MenuEntry[]) => entries.map((e) => (e === "separator" ? "—" : e.text));

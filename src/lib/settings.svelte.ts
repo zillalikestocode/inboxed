@@ -11,6 +11,7 @@ import garamond from "@fontsource-variable/eb-garamond/wght.css?inline";
 import garamondItalic from "@fontsource-variable/eb-garamond/wght-italic.css?inline";
 import sourceSerif from "@fontsource-variable/source-serif-4/wght.css?inline";
 import sourceSerifItalic from "@fontsource-variable/source-serif-4/wght-italic.css?inline";
+import { BASE_SIZE, COLORS, FONTS as COMPOSE_FONTS, SIZES, type BaseStyle } from "./rich";
 
 export type MailFont = { id: string; name: string; family: string; css: string };
 
@@ -40,6 +41,11 @@ const DEFAULTS = {
   sound: true,
   dockBadge: true, // the inboxes' unread count on the Dock icon
   signatures: {} as Record<string, string>, // by account id
+  // What new mail is written in (rich.ts's BaseStyle): a font stack from rich.ts ("" = the default), a size in points,
+  // a swatch ("" = automatic).
+  composeFont: "",
+  composeSize: BASE_SIZE,
+  composeColor: "",
   sidebarHidden: false, // the rail and the list folded away, leaving the mail
 };
 
@@ -55,6 +61,10 @@ function load(): typeof DEFAULTS {
     // Unreadable: the defaults.
   }
   if (!FONTS.some((f) => f.id === out.mailFont)) out.mailFont = DEFAULTS.mailFont;
+  // These go into style attributes: only what's offered.
+  if (!COMPOSE_FONTS.some((f) => f.stack === out.composeFont)) out.composeFont = DEFAULTS.composeFont;
+  if (!SIZES.includes(out.composeSize)) out.composeSize = DEFAULTS.composeSize;
+  if (out.composeColor && !COLORS.includes(out.composeColor)) out.composeColor = DEFAULTS.composeColor;
   return out;
 }
 
@@ -68,6 +78,9 @@ export function saveSettings() {
     // Not remembered; the change still holds for this session.
   }
 }
+
+/** What new mail is written in. */
+export const composeStyle = (): BaseStyle => ({ font: settings.composeFont, size: settings.composeSize, color: settings.composeColor });
 
 export const mailFont = () => FONTS.find((f) => f.id === settings.mailFont) ?? FONTS[0];
 

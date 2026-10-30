@@ -6,6 +6,7 @@ const engine = vi.hoisted(() => {
   const thread = {
     id: "t1", accountId: "a2", mailboxIds: ["a2-inbox"], subject: "Inboxed design review", snippet: "Done.",
     participants: [{ name: "Maya Chen", email: "maya@work.example" }, { name: "Daniel Okafor", email: "daniel@work.example" }],
+    senders: ["maya@work.example"],
     lastDate: "2026-10-15T13:25:00.000Z", unread: true, starred: false, hasAttachments: false,
     messages: [
       { id: "m1", threadId: "t1", from: { name: "You", email: "you@work.example" }, to: [{ name: "Maya Chen", email: "maya@work.example" }], cc: [], date: "2026-10-14T10:00:00.000Z", body: "Hi", attachments: [] },
@@ -134,7 +135,10 @@ describe("composing", () => {
   it("reply goes to the last sender; reply all keeps the people copied in Cc", async () => {
     await s.reply("t1");
     expect(s.ui.draft).toMatchObject({ accountId: "a2", threadId: "t1", to: "Maya Chen <maya@work.example>", cc: "", subject: "Re: Inboxed design review" });
-    expect(s.ui.draft.body).toMatch(/Maya Chen wrote:\n> Done\.$/);
+    // The answered message follows, as Outlook lays it out, in both versions; the editor holds only what's written.
+    expect(s.ui.draft.body).toMatch(/^\n\n_{32}\nFrom: Maya Chen <maya@work.example>\nDate: .+\nTo: You <you@work.example>\nCc: Daniel Okafor <daniel@work.example>\nSubject: Inboxed design review\n\nDone\.$/);
+    expect(s.ui.draft.html).toBe(`<p></p>${s.ui.trail!.html}`);
+    expect(s.ui.trail!.html).toContain("<b>From:</b> Maya Chen");
     await s.reply("t1", true);
     expect(s.ui.draft).toMatchObject({ to: "Maya Chen <maya@work.example>", cc: "Daniel Okafor <daniel@work.example>" });
     await s.forward("t1");
@@ -151,15 +155,34 @@ describe("composing", () => {
     await s.closeCompose(); // untouched apart from the signature: nothing saved
     expect(writes()).toEqual([]);
     await s.reply("t1");
-    expect(s.ui.draft.body).toMatch(/^\n\n-- \nSam\nInboxed\n\nOn .* Maya Chen wrote:/);
+    expect(s.ui.draft.body).toMatch(/^\n\n-- \nSam\nInboxed\n\n_{32}\nFrom: Maya Chen/);
     s.changeSender("a9"); // an account without a signature
-    expect(s.ui.draft.body).toMatch(/^\n\nOn /);
+    expect(s.ui.draft.body).toMatch(/^\n\n_{32}\n/);
+    expect(s.ui.draft.html).toBe(`<p></p>${s.ui.trail!.html}`);
     s.changeSender("a2");
-    expect(s.ui.draft.body).toMatch(/^\n\n-- \nSam\nInboxed\n\nOn /);
+    expect(s.ui.draft.body).toMatch(/^\n\n-- \nSam\nInboxed\n\n_{32}\n/);
+    expect(s.ui.draft.html!.endsWith(`<p>-- </p><p>Sam</p><p>Inboxed</p>${s.ui.trail!.html}`)).toBe(true);
     await s.closeCompose();
     expect(writes()).toEqual([]); // switching back and forth isn't typing
     await s.editDraft({ ...engine.thread.messages[0], subject: "Plans", body: "Saved", draft: true } as never);
     expect(s.ui.draft.body).toBe("Saved");
+    expect(s.ui.trail).toBeNull();
+  });
+
+  it("a resumed reply finds its trail again; what's sent keeps the trail as it was", async () => {
+    await s.reply("t1");
+    const { html, body } = s.ui.draft;
+    const trail = s.ui.trail!;
+    await s.closeCompose();
+    await s.editDraft({ ...engine.thread.messages[1], html: emailHtml(html!), body: `Thanks${body}`, draft: true } as never);
+    expect(s.ui.trail).toEqual(trail);
+    expect(s.ui.draft.html!.endsWith(trail.html)).toBe(true);
+    expect(emailHtml(s.ui.draft.html!).endsWith(trail.html)).toBe(true);
+    // Nothing written above it: the engine stores the body trimmed, starting with the rule.
+    await s.closeCompose();
+    await s.editDraft({ ...engine.thread.messages[1], html: emailHtml(html!), body: body.trimStart(), draft: true } as never);
+    expect(s.ui.trail).toEqual(trail);
+    expect(s.ui.draft.body).toBe(body);
   });
 
   it("send posts the draft, closes the panel and reloads", async () => {
@@ -230,7 +253,7 @@ describe("composing", () => {
     try {
       await s.reply("t1");
       expect(s.ui.draft.to).toBe("Maya Chen <maya@work.example>");
-      expect(s.ui.draft.body).toMatch(/> Done\.$/);
+      expect(s.ui.draft.body).toMatch(/\n\nDone\.$/);
     } finally {
       engine.thread.messages.pop();
     }

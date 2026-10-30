@@ -1,3 +1,4 @@
+import { TRAIL_RULE } from "./quote";
 import type { Address, Message } from "./types";
 
 /** Mail-list style date: time today, "Yesterday", weekday this week, then a date. */
@@ -59,10 +60,26 @@ const fullDate = (iso: string, locale?: string) =>
   new Date(iso).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
 const person = (a: Address) => (a.name && a.name !== a.email ? `${a.name} <${a.email}>` : a.email);
 
-/** What a reply starts with: room to type, then the message it answers, quoted line by line. */
-export function replyQuote(m: Message, locale?: string): string {
-  const quoted = m.body.split("\n").map((line) => (line ? `> ${line}` : ">"));
-  return `\n\nOn ${fullDate(m.date, locale)}, ${m.from.name || m.from.email} wrote:\n${quoted.join("\n")}`;
+/** A reply trail's date, as Outlook writes it: "Thursday, October 8, 2026 at 9:34 AM". */
+export const trailDate = (iso: string, locale?: string) =>
+  new Date(iso).toLocaleString(locale, { dateStyle: "full", timeStyle: "short" });
+
+/** What a reply ends with, as Outlook writes it: a rule, the answered message's From, Date, To, Cc and Subject, then its
+ *  text as it was (not "> " quoted). Starts with the blank line that separates it from what's written above. */
+export function replyTrail(m: Message, locale?: string): string {
+  const people = (list: Address[]) => list.map(person).join("; ");
+  return [
+    "",
+    "",
+    TRAIL_RULE,
+    `From: ${person(m.from)}`,
+    `Date: ${trailDate(m.date, locale)}`,
+    `To: ${people(m.to)}`,
+    ...(m.cc.length ? [`Cc: ${people(m.cc)}`] : []),
+    `Subject: ${m.subject}`,
+    "",
+    m.body,
+  ].join("\n");
 }
 
 /** Where a signature goes in a new message: after what's already written, or above a reply's or forward's quote

@@ -1,4 +1,4 @@
-import type { Mailbox, MailboxRole } from "./types";
+import type { Mailbox, MailboxRole, ThreadSummary } from "./types";
 
 export const ROLES: { role: NonNullable<MailboxRole>; label: string }[] = [
   { role: "inbox", label: "Inbox" },
@@ -25,3 +25,20 @@ export function visibleMailboxes(all: Mailbox[], accountId: string): Mailbox[] {
     unread: all.filter((m) => m.role === role).reduce((sum, m) => sum + m.unread, 0),
   }));
 }
+
+/** Whether an address is from one of the domains the person listed in Settings (any space, comma or line between them;
+ *  a subdomain counts). Nothing listed: every address. */
+export function fromDomain(address: string, domains: string): boolean {
+  const list = domains.toLowerCase().split(/[\s,;]+/).map((d) => d.replace(/^.*@|^\*?\./, "")).filter(Boolean);
+  const host = address.toLowerCase().split("@").pop() ?? "";
+  return !list.length || list.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/** Focused, in an inbox: conversations with mail from the listed domains (the senders that notify). The rest is Other;
+ *  with nothing listed, everything is Focused. */
+export const isFocused = (t: Pick<ThreadSummary, "senders">, domains: string) =>
+  !domains.trim() || t.senders.some((email) => fromDomain(email, domains));
+
+/** Whether a sidebar entry is an inbox (the unified one, or an account's): those split into Focused and Other. */
+export const isInbox = (all: Mailbox[], accountId: string, key: string) =>
+  accountId === "all" ? key === "inbox" : all.some((m) => m.id === key && m.role === "inbox");

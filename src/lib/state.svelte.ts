@@ -1,8 +1,9 @@
 import { api, EngineError, follow, send, upload } from "./engine";
-import { addresses, forwardBody, replyQuote, replyTo, swapSignature, withSignature } from "./format";
+import { addresses, forwardBody, replyTo, replyTrail, swapSignature, withSignature } from "./format";
 import { deliver, notices, onTap, setBadge } from "./notify";
-import { draftHtml, emailHtml, swapSignatureHtml } from "./rich";
-import { settings } from "./settings.svelte";
+import { emailHtml, splitTrail, swapSignatureHtml, textToHtml, trailHtml, type Trail } from "./rich";
+import { composeStyle, settings } from "./settings.svelte";
+import { isFocused } from "./views";
 import type { Account, AccountSettings, Contact, Draft, Mailbox, Message, NewMail, Thread, ThreadSummary } from "./types";
 
 /** Mail data, as the engine last reported it. */
@@ -20,8 +21,11 @@ export const ui = $state({
   mailboxKey: "inbox", // a MailboxRole in the unified view, a mailbox id otherwise
   threadId: null as string | null,
   query: "",
+  focus: "focused" as "focused" | "other", // an inbox's tab: conversations with the Focused domains, or the rest
+  settingsTab: "Appearance", // the section Settings opens on
   composing: false,
   draft: { accountId: "", to: "", cc: "", bcc: "", subject: "", body: "", attachments: [] } as Draft,
+  trail: null as Trail | null, // a reply's history: the draft's html and body end with it, the editor never holds it
   attaching: 0, // files still uploading for the open draft: Send waits for them
   composeError: "", // why the compose panel couldn't send or save; shown in the panel
   composeKey: 0, // a new message re-mounts the panel (focus, state)
@@ -149,11 +153,13 @@ function newMail(batch: NewMail[]) {
 export const openNewMail = () => (ui.newMail.length ? openMail(ui.newMail[0]) : Promise.resolve());
 
 /** Opens new mail's conversation in its account's inbox (the banner, a notification's click). */
-function openMail(m: NewMail) {
+async function openMail(m: NewMail) {
   ui.newMail = ui.newMail.filter((x) => x.threadId !== m.threadId);
-  if (!data.accounts.some((a) => a.id === m.accountId)) return Promise.resolve(); // removed meanwhile
+  if (!data.accounts.some((a) => a.id === m.accountId)) return; // removed meanwhile
   selectAccount(m.accountId);
-  return openThread(m.threadId);
+  await openThread(m.threadId);
+  // The inbox's tab that lists it, so it shows selected.
+  if (data.thread?.id === m.threadId) ui.focus = isFocused(data.thread, settings.notifyDomains) ? "focused" : "other";
 }
 
 export const dismissNewMail = () => (ui.newMail = []);
@@ -276,16 +282,25 @@ export const senders = () => data.accounts.filter((a) => a.provider === "imap");
 let pristine = ""; // the draft as the panel opened, so closing an untouched one saves nothing
 
 /**
- * Opens the panel on a new message. One already open is saved first; if it can't be, it stays as it was and this
- * resolves to false.
+ * Opens the panel on a new message; a reply brings the history it answers (trail), which follows what's written in
+ * both versions of the draft. One already open is saved first; if it can't be, it stays as it was and this resolves to
+ * false.
  */
-export async function compose(draft: Partial<Draft> = {}): Promise<boolean> {
+export async function compose(draft: Partial<Draft> = {}, trail: Trail | null = null): Promise<boolean> {
   if (ui.composing && (await closeCompose())) return false;
   const from = senders().find((a) => a.id === ui.accountId) ?? senders()[0];
   ui.draft = { accountId: from?.id ?? "", to: "", cc: "", bcc: "", subject: "", body: "", attachments: [], ...draft };
-  // A saved draft already has its signature.
+  // A saved draft already has its signature, and its trail (when it's a reply) at the end.
   if (!draft.draftId) ui.draft.body = withSignature(ui.draft.body, settings.signatures[ui.draft.accountId] ?? "");
-  ui.draft.html ||= draftHtml(ui.draft.body, !!ui.draft.threadId);
+  ui.trail = trail ?? splitTrail(ui.draft.html ?? "", ui.draft.body);
+  if (trail) {
+    ui.draft.html = textToHtml(ui.draft.body) + trail.html;
+    ui.draft.body += trail.text;
+  } else {
+    ui.draft.html ||= textToHtml(ui.draft.body);
+    // Saved with nothing above the trail, the body came back starting with its rule (splitTrail).
+    if (ui.trail && !ui.draft.body.endsWith(ui.trail.text)) ui.draft.body = ui.trail.text;
+  }
   pristine = JSON.stringify(ui.draft);
   ui.composeError = "";
   api<Contact[]>("/contacts").then(
@@ -297,13 +312,15 @@ export async function compose(draft: Partial<Draft> = {}): Promise<boolean> {
   return true;
 }
 
-/** The panel's From changed: the signature follows (above tail, a folded quote). An untouched message stays untouched
- *  (closing it saves nothing). */
-export function changeSender(accountId: string, tail = "", html = ui.draft.html ?? "") {
+/** The panel's From changed: the signature follows (above a reply's trail). html is the editor's, trail included. An
+ *  untouched message stays untouched (closing it saves nothing). */
+export function changeSender(accountId: string, html = ui.draft.html ?? "") {
   const untouched = JSON.stringify(ui.draft) === pristine;
   const sig = (id: string) => settings.signatures[id] ?? "";
-  ui.draft.body = swapSignature(ui.draft.body, sig(ui.draft.accountId), sig(accountId));
-  ui.draft.html = swapSignatureHtml(html, sig(ui.draft.accountId), sig(accountId), tail);
+  const tail = ui.trail?.text ?? "";
+  const written = tail && ui.draft.body.endsWith(tail) ? ui.draft.body.slice(0, -tail.length) : ui.draft.body;
+  ui.draft.body = swapSignature(written, sig(ui.draft.accountId), sig(accountId)) + tail;
+  ui.draft.html = swapSignatureHtml(html, sig(ui.draft.accountId), sig(accountId), ui.trail?.html);
   ui.draft.accountId = accountId;
   if (untouched) pristine = JSON.stringify(ui.draft);
 }
@@ -316,8 +333,8 @@ function failure(err: unknown): string {
   return (ui.composeError = "Couldn't reach the mail engine. Try again, or restart Inboxed if it keeps happening.");
 }
 
-// What the engine gets: the editor's HTML made ready for mail apps.
-const outgoing = (d: Draft): Draft => ({ ...d, html: d.html ? emailHtml(d.html) : "" });
+// What the engine gets: the editor's HTML made ready for mail apps, in the style Settings chose for new mail.
+const outgoing = (d: Draft): Draft => ({ ...d, html: d.html ? emailHtml(d.html, composeStyle()) : "" });
 
 /** Sends the open draft. Resolves to null once sent (the panel closes), else to the reason, with the panel open. */
 export async function sendDraft(): Promise<string | null> {
@@ -398,14 +415,11 @@ export const reply = (id: string, all = false) =>
     const thread = await fullThread(id);
     const last = lastSent(thread);
     const { to, cc } = replyTo(last, me(thread), all);
-    await compose({
-      accountId: thread.accountId,
-      threadId: thread.id,
-      to: addresses(to),
-      cc: addresses(cc),
-      subject: prefixed("Re:", thread.subject),
-      body: replyQuote(last),
-    });
+    const answered = { ...last, subject: last.subject || thread.subject };
+    await compose(
+      { accountId: thread.accountId, threadId: thread.id, to: addresses(to), cc: addresses(cc), subject: prefixed("Re:", thread.subject) },
+      { html: trailHtml(answered, composeStyle()), text: replyTrail(answered) },
+    );
   });
 
 export const forward = (id: string) =>

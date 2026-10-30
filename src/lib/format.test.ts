@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addresses, dateGroup, forwardBody, formatDate, formatSize, replyQuote, replyTo, swapSignature, withSignature } from "./format";
+import { addresses, dateGroup, forwardBody, formatDate, formatSize, replyTo, replyTrail, swapSignature, withSignature } from "./format";
 import type { Message } from "./types";
 
 // Thursday 15 October 2026, 14:00 local time.
@@ -62,11 +62,27 @@ const original: Message = {
   date: "2026-10-15T12:00:00.000Z", body: "Are you free?\n\nSaturday works.",
 };
 
-describe("replyQuote", () => {
-  it("quotes every line under a 'wrote:' line, after room to type", () => {
-    const q = replyQuote(original, "en-US");
-    expect(q.startsWith("\n\nOn ")).toBe(true);
-    expect(q).toContain("Maya Chen wrote:\n> Are you free?\n>\n> Saturday works.");
+describe("replyTrail", () => {
+  it("is Outlook's: a rule, the answered message's headers, then its text as it was", () => {
+    const cc = [{ name: "Ada", email: "ada@x" }, { name: "", email: "bo@x" }];
+    const t = replyTrail({ ...original, cc }, "en-US").replace(/\s(?=[AP]M)/g, " ");
+    expect(t).toBe(
+      [
+        "",
+        "",
+        "_".repeat(32),
+        "From: Maya Chen <maya@example.com>",
+        `Date: ${new Date(original.date).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" }).replace(/\s(?=[AP]M)/g, " ")}`,
+        "To: You <you@example.com>",
+        "Cc: Ada <ada@x>; bo@x",
+        "Subject: Dinner plans",
+        "",
+        "Are you free?",
+        "",
+        "Saturday works.",
+      ].join("\n"),
+    );
+    expect(replyTrail(original, "en-US")).not.toContain("Cc:");
   });
 });
 
